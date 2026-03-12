@@ -38,8 +38,8 @@
         };
 
         const sounds = {
-            tap: () => playTone(660, 'sine', 0.1), // 選択肢用（短め）
-            start: () => { playTone(523, 'sine', 0.1); setTimeout(() => playTone(1046, 'sine', 0.1), 50); }, // ルーム作成・参加用
+            tap: () => playTone(660, 'sine', 0.1),
+            start: () => { playTone(523, 'sine', 0.1); setTimeout(() => playTone(1046, 'sine', 0.1), 50); },
             decide: () => playTone(880, 'sine', 0.2), 
             cancel: () => playTone(440, 'sine', 0.2), 
             answer: () => { 
@@ -68,7 +68,7 @@
 
         window.createRoom = () => {
             if(audioCtx.state === 'suspended') audioCtx.resume();
-            sounds.start(); // 音を追加
+            sounds.start();
             roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
@@ -82,7 +82,7 @@
 
         window.joinRoom = () => {
             if(audioCtx.state === 'suspended') audioCtx.resume();
-            sounds.start(); // 音を追加
+            sounds.start();
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
@@ -134,6 +134,7 @@
             onValue(ref(db, `rooms/${roomId}/settings`), (snapshot) => {
                 const settings = snapshot.val();
                 const selectedQs = selectQuestions(allQuestions, settings.A);
+                // ステータスをplayingにする際、既存の設定(Bなど)を壊さないように修正
                 update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
                 set(ref(db, `rooms/${roomId}/currentQuestions`), selectedQs);
             }, { onlyOnce: true });
@@ -155,6 +156,7 @@
 
         function renderGame(data) {
             showScreen("game");
+            // 設定された目標値Bを正しく表示するように修正
             document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
             qDiv.innerHTML = "";
@@ -167,7 +169,7 @@
                 btn.className = mySelected.includes(idx) ? "selected" : "";
                 btn.onclick = () => { 
                     if(!myData.isReady) {
-                        sounds.tap(); // 選択肢を選んだ時の音を追加
+                        sounds.tap();
                         toggleSelect(idx, mySelected);
                     }
                 };
@@ -228,9 +230,11 @@
 
             let bestDiff = Infinity;
             let winners = [];
+            // ここでもdata.settings.Bを参照するように徹底
+            const targetB = data.settings.B;
             Object.values(data.players).forEach(p => {
                 const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
-                const diff = Math.abs(data.settings.B - sum);
+                const diff = Math.abs(targetB - sum);
                 if (diff < bestDiff) {
                     bestDiff = diff;
                     winners = [p.name];
@@ -246,7 +250,7 @@
             renderFinalResult(data, winners);
         }
 
-            function renderFinalResult(data, winners) {
+        function renderFinalResult(data, winners) {
             showScreen("result");
             const playAgainBtn = document.getElementById("playAgainBtn");
             playAgainBtn.innerText = "もう一度遊ぶ";
