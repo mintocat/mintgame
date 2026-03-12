@@ -7,6 +7,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        // 別ファイルから問題を読み込み
+        import { allQuestions } from "./questions.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
@@ -20,15 +22,6 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-
-        const allQuestions = [
-            { event: "鎌倉幕府の成立", year: 1185, set: 1 },
-            { event: "頼朝が征夷大将軍となった", year: 1192, set: 1 },
-            { event: "関ヶ原の戦い", year: 1600, set: null },
-            { event: "五・一五事件", year: 1932, set: 2 },
-            { event: "二・二六事件", year: 1936, set: 2 },
-            { event: "Y2Kと表される年", year: 2000, set: null }
-        ];
 
         let roomId = "";
         let playerId = Math.random().toString(36).substring(7);
@@ -115,8 +108,10 @@
             let setUsed = new Set();
             let shuffled = [...list].sort(() => 0.5 - Math.random());
             for (let q of shuffled) {
-                if (q.set && setUsed.has(q.set)) continue;
-                if (q.set) setUsed.add(q.set);
+                // setが存在しない（省略された）場合はnullとして扱う修正
+                const qSet = q.set !== undefined ? q.set : null;
+                if (qSet && setUsed.has(qSet)) continue;
+                if (qSet) setUsed.add(qSet);
                 filtered.push(q);
                 if (filtered.length >= count) break;
             }
@@ -188,7 +183,6 @@
             ani.innerHTML += "<h1>優勝は...</h1>";
             await delay(2000);
 
-            // ① 優勝者が複数人いる場合の処理
             let bestDiff = Infinity;
             let winners = [];
             Object.values(data.players).forEach(p => {
@@ -209,7 +203,6 @@
 
         function renderFinalResult(data, winners) {
             showScreen("result");
-            // ② 再戦ボタンの状態をリセット
             const playAgainBtn = document.getElementById("playAgainBtn");
             playAgainBtn.innerText = "もう一度遊ぶ";
             playAgainBtn.disabled = false;
@@ -238,7 +231,6 @@
                 resultsHTML += `<strong style='font-size:1.2em; color:${isWinner ? 'red' : 'black'}'>${p.name} ${isWinner ? '(優勝！)' : ''}</strong><br>`;
                 resultsHTML += `<small>${pSelected.length > 0 ? pSelected.map(i => `${qs[i].event}(${qs[i].year})`).join(' + ') : '選択なし'}</small><br>`;
                 resultsHTML += `合計: <strong>${sum}</strong> (差: ${Math.abs(B - sum)})`;
-                // ③ 文言の修正
                 if(isOptimal) resultsHTML += ` <span style='color:blue; font-weight:bold;'>★最適解です！</span>`;
                 resultsHTML += `</div>`;
             });
