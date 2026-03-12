@@ -22,7 +22,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 外部ファイルに頼らない音声合成エンジン ---
+        // --- 音声生成エンジン ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const playTone = (freq, type, duration, vol = 0.1) => {
             const osc = audioCtx.createOscillator();
@@ -38,14 +38,16 @@
         };
 
         const sounds = {
-            decide: () => playTone(880, 'sine', 0.2), // ピッ
-            cancel: () => playTone(440, 'sine', 0.2), // ポッ
-            answer: () => { // ジャジャーン（和音）
+            tap: () => playTone(660, 'sine', 0.1), // 選択肢用（短め）
+            start: () => { playTone(523, 'sine', 0.1); setTimeout(() => playTone(1046, 'sine', 0.1), 50); }, // ルーム作成・参加用
+            decide: () => playTone(880, 'sine', 0.2), 
+            cancel: () => playTone(440, 'sine', 0.2), 
+            answer: () => { 
                 playTone(523.25, 'square', 0.5, 0.05); 
                 playTone(659.25, 'square', 0.5, 0.05); 
                 playTone(783.99, 'square', 0.5, 0.05);
             },
-            fanfare: () => { // パッパカパーン
+            fanfare: () => { 
                 setTimeout(() => playTone(523, 'triangle', 0.3), 0);
                 setTimeout(() => playTone(523, 'triangle', 0.3), 150);
                 setTimeout(() => playTone(659, 'triangle', 0.3), 300);
@@ -66,6 +68,7 @@
 
         window.createRoom = () => {
             if(audioCtx.state === 'suspended') audioCtx.resume();
+            sounds.start(); // 音を追加
             roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
@@ -79,6 +82,7 @@
 
         window.joinRoom = () => {
             if(audioCtx.state === 'suspended') audioCtx.resume();
+            sounds.start(); // 音を追加
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
@@ -161,7 +165,12 @@
                 const btn = document.createElement("button");
                 btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
-                btn.onclick = () => { if(!myData.isReady) toggleSelect(idx, mySelected); };
+                btn.onclick = () => { 
+                    if(!myData.isReady) {
+                        sounds.tap(); // 選択肢を選んだ時の音を追加
+                        toggleSelect(idx, mySelected);
+                    }
+                };
                 qDiv.appendChild(btn);
             });
 
@@ -237,7 +246,7 @@
             renderFinalResult(data, winners);
         }
 
-        function renderFinalResult(data, winners) {
+            function renderFinalResult(data, winners) {
             showScreen("result");
             const playAgainBtn = document.getElementById("playAgainBtn");
             playAgainBtn.innerText = "もう一度遊ぶ";
@@ -279,6 +288,8 @@
         }
 
         window.votePlayAgain = () => {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            sounds.start();
             update(ref(db, `rooms/${roomId}/players/${playerId}`), { playAgain: true });
             document.getElementById("playAgainBtn").innerText = "他の人を待っています...";
             document.getElementById("playAgainBtn").disabled = true;
