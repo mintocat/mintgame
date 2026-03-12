@@ -197,7 +197,7 @@
             return filtered;
         }
 
-        function renderGame(data) {
+function renderGame(data) {
             showScreen("game");
             document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
@@ -209,6 +209,9 @@
                 const btn = document.createElement("button");
                 btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
+                // 数式変換が終わるまで隠しておく設定
+                btn.style.visibility = "hidden"; 
+
                 btn.onclick = () => { 
                     if(!myData.isReady) {
                         sounds.tap();
@@ -231,7 +234,13 @@
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
-            setTimeout(typeset, 0);
+
+            // 数式を描画し、終わったら一斉に表示させる
+            setTimeout(() => {
+                typeset();
+                const btns = qDiv.querySelectorAll("button");
+                btns.forEach(b => b.style.visibility = "visible");
+            }, 0);
         }
 
         function toggleSelect(idx, current) {
