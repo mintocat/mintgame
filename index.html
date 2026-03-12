@@ -12,7 +12,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-        import { allQuestions } from "./questions.js";
+        // static importは削除し、動的ロードに切り替えました
 
         const firebaseConfig = {
             apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
@@ -27,7 +27,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 音声エンジン ---
+        // --- 音声エンジン（変更なし） ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const playTone = (freq, type, duration, vol = 0.1) => {
             const osc = audioCtx.createOscillator();
@@ -65,7 +65,6 @@
             }
         };
 
-        // --- 数式描画の補助関数 ---
         const typeset = () => {
             if (window.renderMathInElement) {
                 renderMathInElement(document.body, {
@@ -95,8 +94,11 @@
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
             const B = parseInt(document.getElementById("setB").value) || 5000;
+            // 選ばれた問題セットのファイル名を保存
+            const qSetFile = document.getElementById("qSetSelect").value;
+            
             set(ref(db, 'rooms/' + roomId), {
-                settings: { A, B, status: "waiting", host: playerId },
+                settings: { A, B, qSetFile, status: "waiting", host: playerId },
                 players: { [playerId]: { name: myName, isReady: false, selected: [], playAgain: false } }
             });
             listenRoom();
@@ -139,7 +141,9 @@
         }
 
         async function resetGame(settings) {
-            const selectedQs = selectQuestions(allQuestions, settings.A);
+            // リセット時も選んでいた問題セットをロード
+            const mod = await import("./" + settings.qSetFile);
+            const selectedQs = selectQuestions(mod.allQuestions, settings.A);
             const updates = { "settings/status": "playing", "currentQuestions": selectedQs };
             onValue(ref(db, `rooms/${roomId}/players`), (snap) => {
                 const pData = snap.val();
@@ -153,11 +157,17 @@
         }
 
         window.startGame = () => {
-            onValue(ref(db, `rooms/${roomId}/settings`), (snapshot) => {
+            onValue(ref(db, `rooms/${roomId}/settings`), async (snapshot) => {
                 const settings = snapshot.val();
-                const selectedQs = selectQuestions(allQuestions, settings.A);
-                update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
-                set(ref(db, `rooms/${roomId}/currentQuestions`), selectedQs);
+                // 動的に問題ファイルをインポート
+                try {
+                    const mod = await import("./" + settings.qSetFile);
+                    const selectedQs = selectQuestions(mod.allQuestions, settings.A);
+                    update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
+                    set(ref(db, `rooms/${roomId}/currentQuestions`), selectedQs);
+                } catch (e) {
+                    alert("問題ファイルの読み込みに失敗しました: " + settings.qSetFile);
+                }
             }, { onlyOnce: true });
         };
 
@@ -209,7 +219,6 @@
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
-            // 数式を描画
             setTimeout(typeset, 0);
         }
 
@@ -241,7 +250,7 @@
             });
             qListHtml += "</ul>";
             ani.innerHTML = qListHtml;
-            typeset(); // 数式描画
+            typeset();
             await delay(3000);
 
             const mySum = (data.players[playerId].selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
@@ -317,7 +326,7 @@
             resultsHTML += `<strong>最適解の例:</strong><br>${optimalText}<br>= 合計 <strong>${optimalSum}</strong> (目標との差: ${minDiff})</div>`;
 
             document.getElementById("resContent").innerHTML = resultsHTML;
-            typeset(); // 数式描画
+            typeset();
         }
 
         window.votePlayAgain = () => {
@@ -333,14 +342,13 @@
         body { font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif; text-align: center; background: #fdfdfd; color: #333; margin: 0; padding: 10px; }
         button { margin: 10px; padding: 12px 24px; font-size: 18px; cursor: pointer; border-radius: 8px; border: 1px solid #ccc; background: white; transition: 0.2s; }
         button.selected { background: #fff176; border-color: #fbc02d; font-weight: bold; transform: scale(1.02); }
-        input { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
+        input, select { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
         .screen { display: none; padding: 10px; max-width: 500px; margin: 0 auto; }
         #setup { display: block; }
         #qList button { display: block; width: 100%; margin: 8px 0; text-align: left; padding: 15px; }
         .ani-box { min-height: 400px; display: flex; flex-direction: column; justify-content: center; }
         h1 { color: #2c3e50; }
         ul { text-align: left; display: inline-block; }
-        /* KaTeXの表示調整 */
         .katex { font-size: 1.1em; }
     </style>
 </head>
@@ -348,6 +356,14 @@
     <div id="setup" class="screen">
         <h1>歴史ピッタリゲーム</h1>
         名前: <input type="text" id="uName" style="width:80%"><br><br>
+        
+        問題セット: 
+        <select id="qSetSelect" style="width:70%">
+            <option value="questions.js">基本セット</option>
+            <option value="math_set.js">数学セット</option>
+            <option value="expert.js">上級者用</option>
+        </select><br><br>
+
         問題数A: <input type="number" id="setA" value="5"><br>
         目標値B: <input type="number" id="setB" value="5000"><br><br>
         <button onclick="createRoom()" style="background:#4caf50; color:white; width:90%;">ルームを作る</button>
