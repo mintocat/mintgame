@@ -139,14 +139,13 @@
                 qDiv.appendChild(btn);
             });
 
-            // ボタンの演出修正
             const readyBtn = document.getElementById("readyBtn");
             if (myData.isReady) {
                 readyBtn.innerText = "解除";
-                readyBtn.style.background = "#8bc34a"; // 黄緑
+                readyBtn.style.background = "#8bc34a";
             } else {
                 readyBtn.innerText = "決定";
-                readyBtn.style.background = "#ff9800"; // オレンジ
+                readyBtn.style.background = "#ff9800";
             }
             
             const players = Object.values(data.players);
@@ -189,24 +188,35 @@
             ani.innerHTML += "<h1>優勝は...</h1>";
             await delay(2000);
 
+            // ① 優勝者が複数人いる場合の処理
             let bestDiff = Infinity;
-            let winnerName = "";
+            let winners = [];
             Object.values(data.players).forEach(p => {
                 const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
                 const diff = Math.abs(data.settings.B - sum);
-                if (diff < bestDiff) { bestDiff = diff; winnerName = p.name; }
+                if (diff < bestDiff) {
+                    bestDiff = diff;
+                    winners = [p.name];
+                } else if (diff === bestDiff) {
+                    winners.push(p.name);
+                }
             });
-            ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnerName} ✨</h1>`;
+            const winnersText = winners.join(" ＆ ");
+            ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnersText} ✨</h1>`;
             await delay(3000);
-            renderFinalResult(data, winnerName);
+            renderFinalResult(data, winners);
         }
 
-        function renderFinalResult(data, winnerName) {
+        function renderFinalResult(data, winners) {
             showScreen("result");
+            // ② 再戦ボタンの状態をリセット
+            const playAgainBtn = document.getElementById("playAgainBtn");
+            playAgainBtn.innerText = "もう一度遊ぶ";
+            playAgainBtn.disabled = false;
+
             const B = data.settings.B;
             const qs = data.currentQuestions;
             
-            // 最適解の計算
             let bestCombo = [], minDiff = Infinity;
             for(let i=0; i < (1 << qs.length); i++) {
                 let tempCombo = [], tempSum = 0;
@@ -221,14 +231,15 @@
             Object.values(data.players).forEach(p => {
                 const pSelected = p.selected || [];
                 const sum = pSelected.reduce((s, i) => s + qs[i].year, 0);
-                const isWinner = (p.name === winnerName);
+                const isWinner = winners.includes(p.name);
                 const isOptimal = (sum === optimalSum);
 
                 resultsHTML += `<div style='border:1px solid #ddd; margin-bottom:10px; padding:10px; border-radius:8px; background:${isWinner ? '#fff0f0' : 'white'}'>`;
                 resultsHTML += `<strong style='font-size:1.2em; color:${isWinner ? 'red' : 'black'}'>${p.name} ${isWinner ? '(優勝！)' : ''}</strong><br>`;
                 resultsHTML += `<small>${pSelected.length > 0 ? pSelected.map(i => `${qs[i].event}(${qs[i].year})`).join(' + ') : '選択なし'}</small><br>`;
                 resultsHTML += `合計: <strong>${sum}</strong> (差: ${Math.abs(B - sum)})`;
-                if(isOptimal) resultsHTML += ` <span style='color:blue; font-weight:bold;'>★最適解と同じ合計です！</span>`;
+                // ③ 文言の修正
+                if(isOptimal) resultsHTML += ` <span style='color:blue; font-weight:bold;'>★最適解です！</span>`;
                 resultsHTML += `</div>`;
             });
             
