@@ -209,8 +209,10 @@ function renderGame(data) {
                 const btn = document.createElement("button");
                 btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
-                // 数式変換が終わるまで隠しておく設定
-                btn.style.visibility = "hidden"; 
+                
+                // --- 改善：透明度を0にし、一瞬で表示されるアニメーションを設定 ---
+                btn.style.opacity = "0";
+                btn.style.transition = "opacity 0.1s ease-in"; 
 
                 btn.onclick = () => { 
                     if(!myData.isReady) {
@@ -235,11 +237,13 @@ function renderGame(data) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
 
-            // 数式を描画し、終わったら一斉に表示させる
+            // 数式を描画し、終わったら一斉に不透明度を1にする
             setTimeout(() => {
                 typeset();
                 const btns = qDiv.querySelectorAll("button");
-                btns.forEach(b => b.style.visibility = "visible");
+                btns.forEach(b => {
+                    b.style.opacity = "1";
+                });
             }, 0);
         }
 
