@@ -7,7 +7,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-        // 別ファイルから問題を読み込み
         import { allQuestions } from "./questions.js";
 
         const firebaseConfig = {
@@ -22,6 +21,14 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
+
+        // --- 効果音の設定 ---
+        const sounds = {
+            decide: new Audio('https://otologic.jp/files/free/se/phrase/decide01.mp3'),
+            cancel: new Audio('https://otologic.jp/files/free/se/phrase/cancel01.mp3'),
+            answer: new Audio('https://otologic.jp/files/free/se/phrase/accent03.mp3'),
+            fanfare: new Audio('https://otologic.jp/files/free/se/phrase/fanfare01.mp3')
+        };
 
         let roomId = "";
         let playerId = Math.random().toString(36).substring(7);
@@ -108,7 +115,6 @@
             let setUsed = new Set();
             let shuffled = [...list].sort(() => 0.5 - Math.random());
             for (let q of shuffled) {
-                // setが存在しない（省略された）場合はnullとして扱う修正
                 const qSet = q.set !== undefined ? q.set : null;
                 if (qSet && setUsed.has(qSet)) continue;
                 if (qSet) setUsed.add(qSet);
@@ -156,7 +162,10 @@
 
         window.toggleReady = () => {
             onValue(ref(db, `rooms/${roomId}/players/${playerId}/isReady`), (snap) => {
-                update(ref(db, `rooms/${roomId}/players/${playerId}`), { isReady: !snap.val() });
+                const isNowReady = !snap.val();
+                // 音を鳴らす
+                if(isNowReady) sounds.decide.play(); else sounds.cancel.play();
+                update(ref(db, `rooms/${roomId}/players/${playerId}`), { isReady: isNowReady });
             }, { onlyOnce: true });
         };
 
@@ -168,6 +177,8 @@
             ani.innerHTML = "<h1>結果発表！！</h1>";
             await delay(1500);
 
+            // 正解発表時に音を鳴らす
+            sounds.answer.play();
             let qListHtml = "<h3>【正解発表】</h3><ul style='list-style:none; padding:0;'>";
             data.currentQuestions.forEach(q => {
                 qListHtml += `<li>${q.event} : <strong>${q.year}年</strong></li>`;
@@ -195,6 +206,9 @@
                     winners.push(p.name);
                 }
             });
+
+            // 優勝発表時にファンファーレ
+            sounds.fanfare.play();
             const winnersText = winners.join(" ＆ ");
             ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnersText} ✨</h1>`;
             await delay(3000);
