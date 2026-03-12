@@ -9,4 +9,5 @@ export const allQuestions = [
     { event: "承久の乱", year: 1221},
     { event: "山崎の戦い", year: 1582},
     { event: "大化の改新", year: 645},
+    { event: "$\frac{3200}{4}$ を求めよ", year: 800},
 ];
