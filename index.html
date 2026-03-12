@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歴史年号・合計ピッタリゲーム</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
+            authDomain: "mintgame-94280.firebaseapp.com",
+            databaseURL: "https://mintgame-94280-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "mintgame-94280",
+            storageBucket: "mintgame-94280.firebasestorage.app",
+            messagingSenderId: "747623486963",
+            appId: "1:747623486963:web:1a5bfc0937717f5b422e86"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // --- データ（あなたが用意したものをここに追加できます） ---
+        const allQuestions = [
+            { event: "鎌倉幕府の成立", year: 1185, set: 1 },
+            { event: "頼朝が征夷大将軍となった", year: 1192, set: 1 },
+            { event: "関ヶ原の戦い", year: 1600, set: null },
+            { event: "五・一五事件", year: 1932, set: 2 },
+            { event: "二・二六事件", year: 1936, set: 2 },
+            { event: "Y2Kと表される年", year: 2000, set: null },
+            // 必要に応じてここに増やせます
+        ];
+
+        let roomId = "";
+        let playerId = Math.random().toString(36).substring(7);
+        let myName = "";
+
+        // UI要素
+        const screens = ["setup", "lobby", "game", "result"];
+        const showScreen = (id) => {
+            screens.forEach(s => document.getElementById(s).style.display = s === id ? 'block' : 'none');
+        };
+
+        // --- ルーム作成 ---
+        window.createRoom = () => {
+            roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            myName = document.getElementById("uName").value || "名無し";
+            const A = parseInt(document.getElementById("setA").value) || 10;
+            const B = parseInt(document.getElementById("setB").value) || 5000;
+            
+            set(ref(db, 'rooms/' + roomId), {
+                settings: { A, B, status: "waiting", host: playerId },
+                players: { [playerId]: { name: myName, isReady: false, selected: [] } }
+            });
+            listenRoom();
+        };
+
+        // --- ルーム参加 ---
+        window.joinRoom = () => {
+            roomId = document.getElementById("rId").value.toUpperCase();
+            myName = document.getElementById("uName").value || "名無し";
+            if(!roomId) return alert("ルームIDを入力してね");
+
+            update(ref(db, `rooms/${roomId}/players/${playerId}`), {
+                name: myName, isReady: false, selected: []
+            });
+            listenRoom();
+        };
+
+        function listenRoom() {
+            onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                if (data.settings.status === "waiting") {
+                    showScreen("lobby");
+                    document.getElementById("displayRoomId").innerText = roomId;
+                    const pList = Object.values(data.players).map(p => `<li>${p.name}</li>`).join("");
+                    document.getElementById("playerList").innerHTML = pList;
+                    document.getElementById("startBtn").style.display = data.settings.host === playerId ? "block" : "none";
+                } 
+                else if (data.settings.status === "playing") {
+                    renderGame(data);
+                }
+                else if (data.settings.status === "finished") {
+                    renderResult(data);
+                }
+            });
+        }
+
+        window.startGame = () => {
+            onValue(ref(db, 'rooms/' + roomId + '/settings'), (snapshot) => {
+                const settings = snapshot.val();
+                const selectedQs = selectQuestions(allQuestions, settings.A);
+                update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
+                set(ref(db, `rooms/${roomId}/currentQuestions`), selectedQs);
+            }, { onlyOnce: true });
+        };
+
+        function selectQuestions(list, count) {
+            let filtered = [];
+            let setUsed = new Set();
+            let shuffled = list.sort(() => 0.5 - Math.random());
+            for (let q of shuffled) {
+                if (q.set && setUsed.has(q.set)) continue;
+                if (q.set) setUsed.add(q.set);
+                filtered.push(q);
+                if (filtered.length >= count) break;
+            }
+            return filtered;
+        }
+
+        function renderGame(data) {
+            showScreen("game");
+            const qDiv = document.getElementById("qList");
+            qDiv.innerHTML = "";
+            const mySelected = data.players[playerId].selected || [];
+            
+            data.currentQuestions.forEach((q, idx) => {
+                const btn = document.createElement("button");
+                btn.innerText = q.event;
+                btn.className = mySelected.includes(idx) ? "selected" : "";
+                btn.onclick = () => toggleSelect(idx, mySelected, data.currentQuestions);
+                qDiv.appendChild(btn);
+            });
+
+            document.getElementById("currentSum").innerText = mySelected.reduce((s, i) => s + data.currentQuestions[i].year, 0);
+            
+            // 全員準備完了チェック
+            const players = Object.values(data.players);
+            if (players.every(p => p.isReady) && data.settings.host === playerId) {
+                update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
+            }
+        }
+
+        function toggleSelect(idx, current, qs) {
+            let newSelect = current.includes(idx) ? current.filter(i => i !== idx) : [...current, idx];
+            update(ref(db, `rooms/${roomId}/players/${playerId}`), { selected: newSelect });
+        }
+
+        window.toggleReady = () => {
+            onValue(ref(db, `rooms/${roomId}/players/${playerId}/isReady`), (snap) => {
+                update(ref(db, `rooms/${roomId}/players/${playerId}`), { isReady: !snap.val() });
+            }, { onlyOnce: true });
+        };
+
+        function renderResult(data) {
+            showScreen("result");
+            const B = data.settings.B;
+            let resultsHTML = "<ul>";
+            let bestDiff = Infinity;
+            let winner = "";
+
+            Object.values(data.players).forEach(p => {
+                const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
+                const diff = Math.abs(B - sum);
+                resultsHTML += `<li>${p.name}: 合計 ${sum} (差: ${diff})</li>`;
+                if (diff < bestDiff) { bestDiff = diff; winner = p.name; }
+            });
+            resultsHTML += `</ul><h3>勝者: ${winner}!</h3>`;
+            
+            // 最適解（簡易全探索）
+            const qs = data.currentQuestions;
+            let bestCombo = [], minDiff = Infinity;
+            for(let i=0; i < (1 << qs.length); i++) {
+                let tempCombo = [], tempSum = 0;
+                for(let j=0; j < qs.length; j++) {
+                    if((i >> j) & 1) { tempCombo.push(qs[j]); tempSum += qs[j].year; }
+                }
+                if(Math.abs(B - tempSum) < minDiff) { minDiff = Math.abs(B - tempSum); bestCombo = tempCombo; }
+            }
+
+            document.getElementById("resContent").innerHTML = resultsHTML + 
+                `<p>最適解の例: ${bestCombo.map(q => q.event).join(" + ")} (合計: ${B - minDiff + minDiff === B ? B : '最接近'})</p>`;
+        }
+
+        window.goNext = () => {
+             if (playerId === "host_id_logic_needed") { /* 簡略化のためリロード推奨 */ }
+             location.reload();
+        };
+
+    </script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f4f8; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        .selected { background: #ffcc00; border: 2px solid #ff9900; }
+        #qList button { display: block; width: 80%; margin: 5px auto; }
+        .screen { display: none; padding: 20px; }
+        #setup { display: block; }
+    </style>
+</head>
+<body>
+    <div id="setup" class="screen">
+        <h1>歴史ピッタリゲーム</h1>
+        名前: <input type="text" id="uName" placeholder="なまえ"><br>
+        問題数A: <input type="number" id="setA" value="5"><br>
+        目標値B: <input type="number" id="setB" value="5000"><br>
+        <button onclick="createRoom()">ルームを作る</button>
+        <hr>
+        ルームID: <input type="text" id="rId"><br>
+        <button onclick="joinRoom()">参加する</button>
+    </div>
+
+    <div id="lobby" class="screen">
+        <h2>待機中... ID: <span id="displayRoomId"></span></h2>
+        <ul id="playerList"></ul>
+        <button id="startBtn" onclick="startGame()">スタート！</button>
+    </div>
+
+    <div id="game" class="screen">
+        <h2>目標: <span id="targetB"></span>に近いものを選べ！</h2>
+        <div id="qList"></div>
+        <p>現在の合計: <span id="currentSum">0</span></p>
+        <button onclick="toggleReady()">決定 / 解除</button>
+    </div>
+
+    <div id="result" class="screen">
+        <h2>結果発表</h2>
+        <div id="resContent"></div>
+        <button onclick="goNext()">もう一度遊ぶ</button>
+    </div>
+</body>
+</html>
