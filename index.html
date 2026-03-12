@@ -3,18 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>歴史年号ピッタリゲーム (Math版)</title>
+    <title>歴史年号ピッタリゲーム</title>
     
-    <script>
-      window.MathJax = {
-        tex: {
-          inlineMath: [['$', '$'], ['\\(', '\\)']],
-          displayMath: [['$$', '$$'], ['\\[', '\\]']]
-        },
-        chtml: { displayAlign: 'center' }
-      };
-    </script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/dist/tex-chtml.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -34,7 +27,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 音声生成エンジン ---
+        // --- 音声エンジン ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const playTone = (freq, type, duration, vol = 0.1) => {
             const osc = audioCtx.createOscillator();
@@ -72,6 +65,18 @@
             }
         };
 
+        // --- 数式描画の補助関数 ---
+        const typeset = () => {
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false}
+                    ]
+                });
+            }
+        };
+
         let roomId = "";
         let playerId = Math.random().toString(36).substring(7);
         let myName = "";
@@ -81,8 +86,6 @@
             currentScreen = id;
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
             document.getElementById(id).style.display = 'block';
-            // 画面切り替え時に数式をスキャンして描画
-            if (window.MathJax) { MathJax.typesetPromise(); }
         };
 
         window.createRoom = () => {
@@ -182,7 +185,7 @@
             
             data.currentQuestions.forEach((q, idx) => {
                 const btn = document.createElement("button");
-                btn.innerHTML = q.event; // HTMLタグ(数式)を許可するためinnerHTMLに変更
+                btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
                 btn.onclick = () => { 
                     if(!myData.isReady) {
@@ -192,9 +195,6 @@
                 };
                 qDiv.appendChild(btn);
             });
-
-            // 数式を再描画
-            if (window.MathJax) { MathJax.typesetPromise(); }
 
             const readyBtn = document.getElementById("readyBtn");
             if (myData.isReady) {
@@ -209,6 +209,8 @@
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
+            // 数式を描画
+            setTimeout(typeset, 0);
         }
 
         function toggleSelect(idx, current) {
@@ -239,7 +241,7 @@
             });
             qListHtml += "</ul>";
             ani.innerHTML = qListHtml;
-            if (window.MathJax) { MathJax.typesetPromise(); }
+            typeset(); // 数式描画
             await delay(3000);
 
             const mySum = (data.players[playerId].selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
@@ -315,7 +317,7 @@
             resultsHTML += `<strong>最適解の例:</strong><br>${optimalText}<br>= 合計 <strong>${optimalSum}</strong> (目標との差: ${minDiff})</div>`;
 
             document.getElementById("resContent").innerHTML = resultsHTML;
-            if (window.MathJax) { MathJax.typesetPromise(); }
+            typeset(); // 数式描画
         }
 
         window.votePlayAgain = () => {
@@ -338,6 +340,8 @@
         .ani-box { min-height: 400px; display: flex; flex-direction: column; justify-content: center; }
         h1 { color: #2c3e50; }
         ul { text-align: left; display: inline-block; }
+        /* KaTeXの表示調整 */
+        .katex { font-size: 1.1em; }
     </style>
 </head>
 <body>
