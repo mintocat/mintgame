@@ -3,7 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>歴史年号ピッタリゲーム</title>
+    <title>歴史年号ピッタリゲーム (Math版)</title>
+    
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        chtml: { displayAlign: 'center' }
+      };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/dist/tex-chtml.js"></script>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
@@ -53,8 +65,7 @@
                 setTimeout(() => playTone(659, 'triangle', 0.3), 300);
                 setTimeout(() => playTone(783, 'triangle', 0.6), 450);
             },
-            perfect: () => { // 最適解の時の気持ちいい音
-                const now = audioCtx.currentTime;
+            perfect: () => {
                 [1046.50, 1318.51, 1567.98, 2093.00].forEach((f, i) => {
                     playTone(f, 'sine', 0.4 + i*0.1, 0.03);
                 });
@@ -70,6 +81,8 @@
             currentScreen = id;
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
             document.getElementById(id).style.display = 'block';
+            // 画面切り替え時に数式をスキャンして描画
+            if (window.MathJax) { MathJax.typesetPromise(); }
         };
 
         window.createRoom = () => {
@@ -169,7 +182,7 @@
             
             data.currentQuestions.forEach((q, idx) => {
                 const btn = document.createElement("button");
-                btn.innerText = q.event;
+                btn.innerHTML = q.event; // HTMLタグ(数式)を許可するためinnerHTMLに変更
                 btn.className = mySelected.includes(idx) ? "selected" : "";
                 btn.onclick = () => { 
                     if(!myData.isReady) {
@@ -179,6 +192,9 @@
                 };
                 qDiv.appendChild(btn);
             });
+
+            // 数式を再描画
+            if (window.MathJax) { MathJax.typesetPromise(); }
 
             const readyBtn = document.getElementById("readyBtn");
             if (myData.isReady) {
@@ -223,6 +239,7 @@
             });
             qListHtml += "</ul>";
             ani.innerHTML = qListHtml;
+            if (window.MathJax) { MathJax.typesetPromise(); }
             await delay(3000);
 
             const mySum = (data.players[playerId].selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
@@ -291,7 +308,6 @@
                 resultsHTML += `</div>`;
             });
 
-            // 自分が最適解だった場合、気持ちいい音を鳴らす
             if (someoneWasOptimal) sounds.perfect();
             
             let optimalText = bestCombo.map(q => `${q.event}(${q.year})`).join('<br>+ ');
@@ -299,6 +315,7 @@
             resultsHTML += `<strong>最適解の例:</strong><br>${optimalText}<br>= 合計 <strong>${optimalSum}</strong> (目標との差: ${minDiff})</div>`;
 
             document.getElementById("resContent").innerHTML = resultsHTML;
+            if (window.MathJax) { MathJax.typesetPromise(); }
         }
 
         window.votePlayAgain = () => {
@@ -331,7 +348,7 @@
         目標値B: <input type="number" id="setB" value="5000"><br><br>
         <button onclick="createRoom()" style="background:#4caf50; color:white; width:90%;">ルームを作る</button>
         <hr>
-        ルームID: <input type="text" id="rId" maxlength="2" style="width:60px; text-transform:uppercase;"><br>
+        2桁ルームID: <input type="text" id="rId" maxlength="2" style="width:60px; text-transform:uppercase;"><br>
         <button onclick="joinRoom()" style="width:90%;">参加する</button>
     </div>
 
