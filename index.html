@@ -52,6 +52,12 @@
                 setTimeout(() => playTone(523, 'triangle', 0.3), 150);
                 setTimeout(() => playTone(659, 'triangle', 0.3), 300);
                 setTimeout(() => playTone(783, 'triangle', 0.6), 450);
+            },
+            perfect: () => { // 最適解の時の気持ちいい音
+                const now = audioCtx.currentTime;
+                [1046.50, 1318.51, 1567.98, 2093.00].forEach((f, i) => {
+                    playTone(f, 'sine', 0.4 + i*0.1, 0.03);
+                });
             }
         };
 
@@ -134,7 +140,6 @@
             onValue(ref(db, `rooms/${roomId}/settings`), (snapshot) => {
                 const settings = snapshot.val();
                 const selectedQs = selectQuestions(allQuestions, settings.A);
-                // ステータスをplayingにする際、既存の設定(Bなど)を壊さないように修正
                 update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
                 set(ref(db, `rooms/${roomId}/currentQuestions`), selectedQs);
             }, { onlyOnce: true });
@@ -156,7 +161,6 @@
 
         function renderGame(data) {
             showScreen("game");
-            // 設定された目標値Bを正しく表示するように修正
             document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
             qDiv.innerHTML = "";
@@ -230,7 +234,6 @@
 
             let bestDiff = Infinity;
             let winners = [];
-            // ここでもdata.settings.Bを参照するように徹底
             const targetB = data.settings.B;
             Object.values(data.players).forEach(p => {
                 const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
@@ -270,11 +273,15 @@
             const optimalSum = bestCombo.reduce((s, q) => s + q.year, 0);
 
             let resultsHTML = "<h3>プレイヤーの選択</h3>";
+            let someoneWasOptimal = false;
+
             Object.values(data.players).forEach(p => {
                 const pSelected = p.selected || [];
                 const sum = pSelected.reduce((s, i) => s + qs[i].year, 0);
                 const isWinner = winners.includes(p.name);
                 const isOptimal = (sum === optimalSum);
+
+                if (isOptimal && p.name === data.players[playerId].name) someoneWasOptimal = true;
 
                 resultsHTML += `<div style='border:1px solid #ddd; margin-bottom:10px; padding:10px; border-radius:8px; background:${isWinner ? '#fff0f0' : 'white'}'>`;
                 resultsHTML += `<strong style='font-size:1.2em; color:${isWinner ? 'red' : 'black'}'>${p.name} ${isWinner ? '(優勝！)' : ''}</strong><br>`;
@@ -283,6 +290,9 @@
                 if(isOptimal) resultsHTML += ` <span style='color:blue; font-weight:bold;'>★最適解です！</span>`;
                 resultsHTML += `</div>`;
             });
+
+            // 自分が最適解だった場合、気持ちいい音を鳴らす
+            if (someoneWasOptimal) sounds.perfect();
             
             let optimalText = bestCombo.map(q => `${q.event}(${q.year})`).join('<br>+ ');
             resultsHTML += `<div style='background:#e3f2fd; padding:15px; border-radius:8px; margin-top:20px;'>`;
@@ -321,7 +331,7 @@
         目標値B: <input type="number" id="setB" value="5000"><br><br>
         <button onclick="createRoom()" style="background:#4caf50; color:white; width:90%;">ルームを作る</button>
         <hr>
-        2桁ルームID: <input type="text" id="rId" maxlength="2" style="width:60px; text-transform:uppercase;"><br>
+        ルームID: <input type="text" id="rId" maxlength="2" style="width:60px; text-transform:uppercase;"><br>
         <button onclick="joinRoom()" style="width:90%;">参加する</button>
     </div>
 
