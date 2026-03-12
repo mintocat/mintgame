@@ -12,7 +12,22 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-        // static importは削除し、動的ロードに切り替えました
+        
+        // --- 設定ファイルから問題セットのリストを読み込む ---
+        import { questionSets } from "./config.js";
+
+        // 画面起動時にプルダウンの中身を自動作成する
+        window.addEventListener('DOMContentLoaded', () => {
+            const select = document.getElementById("qSetSelect");
+            if (select) {
+                questionSets.forEach(s => {
+                    const opt = document.createElement("option");
+                    opt.value = s.value;
+                    opt.innerText = s.label;
+                    select.appendChild(opt);
+                });
+            }
+        });
 
         const firebaseConfig = {
             apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
@@ -27,7 +42,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 音声エンジン（変更なし） ---
+        // --- 音声エンジン（完全維持） ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const playTone = (freq, type, duration, vol = 0.1) => {
             const osc = audioCtx.createOscillator();
@@ -94,7 +109,6 @@
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
             const B = parseInt(document.getElementById("setB").value) || 5000;
-            // 選ばれた問題セットのファイル名を保存
             const qSetFile = document.getElementById("qSetSelect").value;
             
             set(ref(db, 'rooms/' + roomId), {
@@ -141,7 +155,6 @@
         }
 
         async function resetGame(settings) {
-            // リセット時も選んでいた問題セットをロード
             const mod = await import("./" + settings.qSetFile);
             const selectedQs = selectQuestions(mod.allQuestions, settings.A);
             const updates = { "settings/status": "playing", "currentQuestions": selectedQs };
@@ -159,7 +172,6 @@
         window.startGame = () => {
             onValue(ref(db, `rooms/${roomId}/settings`), async (snapshot) => {
                 const settings = snapshot.val();
-                // 動的に問題ファイルをインポート
                 try {
                     const mod = await import("./" + settings.qSetFile);
                     const selectedQs = selectQuestions(mod.allQuestions, settings.A);
@@ -358,11 +370,7 @@
         名前: <input type="text" id="uName" style="width:80%"><br><br>
         
         問題セット: 
-        <select id="qSetSelect" style="width:70%">
-            <option value="questions.js">基本セット</option>
-            <option value="math_set.js">数学セット</option>
-            <option value="expert.js">上級者用</option>
-        </select><br><br>
+        <select id="qSetSelect" style="width:70%"></select><br><br>
 
         問題数A: <input type="number" id="setA" value="5"><br>
         目標値B: <input type="number" id="setB" value="5000"><br><br>
