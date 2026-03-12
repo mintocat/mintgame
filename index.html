@@ -22,22 +22,35 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 効果音の設定 ---
-        const sounds = {
-            decide: new Audio('https://otologic.jp/files/free/se/phrase/decide01.mp3'),
-            cancel: new Audio('https://otologic.jp/files/free/se/phrase/cancel01.mp3'),
-            answer: new Audio('https://otologic.jp/files/free/se/phrase/accent03.mp3'),
-            fanfare: new Audio('https://otologic.jp/files/free/se/phrase/fanfare01.mp3')
+        // --- 外部ファイルに頼らない音声合成エンジン ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const playTone = (freq, type, duration, vol = 0.1) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
         };
 
-        // ブラウザの音制限を解除する関数
-        const unlockAudio = () => {
-            Object.values(sounds).forEach(s => {
-                s.play().then(() => {
-                    s.pause();
-                    s.currentTime = 0;
-                }).catch(e => console.log("Audio unlock waiting..."));
-            });
+        const sounds = {
+            decide: () => playTone(880, 'sine', 0.2), // ピッ
+            cancel: () => playTone(440, 'sine', 0.2), // ポッ
+            answer: () => { // ジャジャーン（和音）
+                playTone(523.25, 'square', 0.5, 0.05); 
+                playTone(659.25, 'square', 0.5, 0.05); 
+                playTone(783.99, 'square', 0.5, 0.05);
+            },
+            fanfare: () => { // パッパカパーン
+                setTimeout(() => playTone(523, 'triangle', 0.3), 0);
+                setTimeout(() => playTone(523, 'triangle', 0.3), 150);
+                setTimeout(() => playTone(659, 'triangle', 0.3), 300);
+                setTimeout(() => playTone(783, 'triangle', 0.6), 450);
+            }
         };
 
         let roomId = "";
@@ -52,7 +65,7 @@
         };
 
         window.createRoom = () => {
-            unlockAudio(); // ボタンクリック時に音を解禁
+            if(audioCtx.state === 'suspended') audioCtx.resume();
             roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
@@ -65,7 +78,7 @@
         };
 
         window.joinRoom = () => {
-            unlockAudio(); // ボタンクリック時に音を解禁
+            if(audioCtx.state === 'suspended') audioCtx.resume();
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
@@ -175,7 +188,7 @@
         window.toggleReady = () => {
             onValue(ref(db, `rooms/${roomId}/players/${playerId}/isReady`), (snap) => {
                 const isNowReady = !snap.val();
-                if(isNowReady) sounds.decide.play(); else sounds.cancel.play();
+                if(isNowReady) sounds.decide(); else sounds.cancel();
                 update(ref(db, `rooms/${roomId}/players/${playerId}`), { isReady: isNowReady });
             }, { onlyOnce: true });
         };
@@ -188,7 +201,7 @@
             ani.innerHTML = "<h1>結果発表！！</h1>";
             await delay(1500);
 
-            sounds.answer.play();
+            sounds.answer();
             let qListHtml = "<h3>【正解発表】</h3><ul style='list-style:none; padding:0;'>";
             data.currentQuestions.forEach(q => {
                 qListHtml += `<li>${q.event} : <strong>${q.year}年</strong></li>`;
@@ -217,7 +230,7 @@
                 }
             });
 
-            sounds.fanfare.play();
+            sounds.fanfare();
             const winnersText = winners.join(" ＆ ");
             ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnersText} ✨</h1>`;
             await delay(3000);
