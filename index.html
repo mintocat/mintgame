@@ -30,6 +30,16 @@
             fanfare: new Audio('https://otologic.jp/files/free/se/phrase/fanfare01.mp3')
         };
 
+        // ブラウザの音制限を解除する関数
+        const unlockAudio = () => {
+            Object.values(sounds).forEach(s => {
+                s.play().then(() => {
+                    s.pause();
+                    s.currentTime = 0;
+                }).catch(e => console.log("Audio unlock waiting..."));
+            });
+        };
+
         let roomId = "";
         let playerId = Math.random().toString(36).substring(7);
         let myName = "";
@@ -42,6 +52,7 @@
         };
 
         window.createRoom = () => {
+            unlockAudio(); // ボタンクリック時に音を解禁
             roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
@@ -54,6 +65,7 @@
         };
 
         window.joinRoom = () => {
+            unlockAudio(); // ボタンクリック時に音を解禁
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
@@ -163,7 +175,6 @@
         window.toggleReady = () => {
             onValue(ref(db, `rooms/${roomId}/players/${playerId}/isReady`), (snap) => {
                 const isNowReady = !snap.val();
-                // 音を鳴らす
                 if(isNowReady) sounds.decide.play(); else sounds.cancel.play();
                 update(ref(db, `rooms/${roomId}/players/${playerId}`), { isReady: isNowReady });
             }, { onlyOnce: true });
@@ -177,7 +188,6 @@
             ani.innerHTML = "<h1>結果発表！！</h1>";
             await delay(1500);
 
-            // 正解発表時に音を鳴らす
             sounds.answer.play();
             let qListHtml = "<h3>【正解発表】</h3><ul style='list-style:none; padding:0;'>";
             data.currentQuestions.forEach(q => {
@@ -207,7 +217,6 @@
                 }
             });
 
-            // 優勝発表時にファンファーレ
             sounds.fanfare.play();
             const winnersText = winners.join(" ＆ ");
             ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnersText} ✨</h1>`;
