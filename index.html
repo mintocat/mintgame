@@ -6,7 +6,7 @@
     <title>歴史年号ピッタリゲーム</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
@@ -41,13 +41,11 @@
             document.getElementById(id).style.display = 'block';
         };
 
-        // 1. ルームIDを2桁にする
         window.createRoom = () => {
             roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             const A = parseInt(document.getElementById("setA").value) || 5;
             const B = parseInt(document.getElementById("setB").value) || 5000;
-            
             set(ref(db, 'rooms/' + roomId), {
                 settings: { A, B, status: "waiting", host: playerId },
                 players: { [playerId]: { name: myName, isReady: false, selected: [], playAgain: false } }
@@ -59,7 +57,6 @@
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
-
             update(ref(db, `rooms/${roomId}/players/${playerId}`), {
                 name: myName, isReady: false, selected: [], playAgain: false
             });
@@ -70,7 +67,6 @@
             onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
                 const data = snapshot.val();
                 if (!data) return;
-
                 if (data.settings.status === "waiting") {
                     showScreen("lobby");
                     document.getElementById("displayRoomId").innerText = roomId;
@@ -82,14 +78,10 @@
                     renderGame(data);
                 }
                 else if (data.settings.status === "finished") {
-                    if(currentScreen !== "result" && currentScreen !== "animation") {
-                        startDrama(data);
-                    }
+                    if(currentScreen !== "result" && currentScreen !== "animation") startDrama(data);
                 }
-                
-                // 4. 全員が「もう一度遊ぶ」を押したかチェック
                 const players = Object.values(data.players);
-                if (players.every(p => p.playAgain) && data.settings.host === playerId) {
+                if (players.length > 0 && players.every(p => p.playAgain) && data.settings.host === playerId) {
                     resetGame(data.settings);
                 }
             });
@@ -97,11 +89,7 @@
 
         async function resetGame(settings) {
             const selectedQs = selectQuestions(allQuestions, settings.A);
-            const updates = {
-                "settings/status": "playing",
-                "currentQuestions": selectedQs
-            };
-            // プレイヤーの状態をリセット
+            const updates = { "settings/status": "playing", "currentQuestions": selectedQs };
             onValue(ref(db, `rooms/${roomId}/players`), (snap) => {
                 const pData = snap.val();
                 for(let id in pData) {
@@ -125,7 +113,7 @@
         function selectQuestions(list, count) {
             let filtered = [];
             let setUsed = new Set();
-            let shuffled = list.sort(() => 0.5 - Math.random());
+            let shuffled = [...list].sort(() => 0.5 - Math.random());
             for (let q of shuffled) {
                 if (q.set && setUsed.has(q.set)) continue;
                 if (q.set) setUsed.add(q.set);
@@ -137,21 +125,29 @@
 
         function renderGame(data) {
             showScreen("game");
-            // 2. 目標数値の表示修正
             document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
             qDiv.innerHTML = "";
-            const mySelected = data.players[playerId].selected || [];
+            const myData = data.players[playerId];
+            const mySelected = myData.selected || [];
             
             data.currentQuestions.forEach((q, idx) => {
                 const btn = document.createElement("button");
                 btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
-                btn.onclick = () => toggleSelect(idx, mySelected);
+                btn.onclick = () => { if(!myData.isReady) toggleSelect(idx, mySelected); };
                 qDiv.appendChild(btn);
             });
 
-            // 3. 「現在の合計」非表示（HTML側で削除済み）
+            // ボタンの演出修正
+            const readyBtn = document.getElementById("readyBtn");
+            if (myData.isReady) {
+                readyBtn.innerText = "解除";
+                readyBtn.style.background = "#8bc34a"; // 黄緑
+            } else {
+                readyBtn.innerText = "決定";
+                readyBtn.style.background = "#ff9800"; // オレンジ
+            }
             
             const players = Object.values(data.players);
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
@@ -170,14 +166,13 @@
             }, { onlyOnce: true });
         };
 
-        // 5. ドラマチックな結果発表演出
         async function startDrama(data) {
             showScreen("animation");
             const ani = document.getElementById("animationContent");
             const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
             ani.innerHTML = "<h1>結果発表！！</h1>";
-            await delay(2000);
+            await delay(1500);
 
             let qListHtml = "<h3>【正解発表】</h3><ul style='list-style:none; padding:0;'>";
             data.currentQuestions.forEach(q => {
@@ -189,37 +184,29 @@
 
             const mySum = (data.players[playerId].selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
             ani.innerHTML += `<h2>あなたの合計: ${mySum}</h2>`;
-            await delay(2500);
+            await delay(2000);
 
             ani.innerHTML += "<h1>優勝は...</h1>";
             await delay(2000);
 
             let bestDiff = Infinity;
-            let winner = "";
+            let winnerName = "";
             Object.values(data.players).forEach(p => {
                 const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
                 const diff = Math.abs(data.settings.B - sum);
-                if (diff < bestDiff) { bestDiff = diff; winner = p.name; }
+                if (diff < bestDiff) { bestDiff = diff; winnerName = p.name; }
             });
-
-            ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winner} ✨</h1>`;
+            ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winnerName} ✨</h1>`;
             await delay(3000);
-
-            renderFinalResult(data);
+            renderFinalResult(data, winnerName);
         }
 
-        function renderFinalResult(data) {
+        function renderFinalResult(data, winnerName) {
             showScreen("result");
             const B = data.settings.B;
-            let resultsHTML = "<h3>全員のスコア</h3><ul>";
-            Object.values(data.players).forEach(p => {
-                const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
-                resultsHTML += `<li>${p.name}: 合計 ${sum} (差: ${Math.abs(B - sum)})</li>`;
-            });
-            resultsHTML += "</ul>";
-            
-            // 最適解
             const qs = data.currentQuestions;
+            
+            // 最適解の計算
             let bestCombo = [], minDiff = Infinity;
             for(let i=0; i < (1 << qs.length); i++) {
                 let tempCombo = [], tempSum = 0;
@@ -228,53 +215,72 @@
                 }
                 if(Math.abs(B - tempSum) < minDiff) { minDiff = Math.abs(B - tempSum); bestCombo = tempCombo; }
             }
-            resultsHTML += `<div style='background:#eee; padding:10px;'><strong>最適解の例:</strong><br>${bestCombo.map(q => q.event).join("<br>+ ")}<br>= 合計 ${B - minDiff + minDiff === B ? B : B-minDiff}</div>`;
+            const optimalSum = bestCombo.reduce((s, q) => s + q.year, 0);
+
+            let resultsHTML = "<h3>プレイヤーの選択</h3>";
+            Object.values(data.players).forEach(p => {
+                const pSelected = p.selected || [];
+                const sum = pSelected.reduce((s, i) => s + qs[i].year, 0);
+                const isWinner = (p.name === winnerName);
+                const isOptimal = (sum === optimalSum);
+
+                resultsHTML += `<div style='border:1px solid #ddd; margin-bottom:10px; padding:10px; border-radius:8px; background:${isWinner ? '#fff0f0' : 'white'}'>`;
+                resultsHTML += `<strong style='font-size:1.2em; color:${isWinner ? 'red' : 'black'}'>${p.name} ${isWinner ? '(優勝！)' : ''}</strong><br>`;
+                resultsHTML += `<small>${pSelected.length > 0 ? pSelected.map(i => `${qs[i].event}(${qs[i].year})`).join(' + ') : '選択なし'}</small><br>`;
+                resultsHTML += `合計: <strong>${sum}</strong> (差: ${Math.abs(B - sum)})`;
+                if(isOptimal) resultsHTML += ` <span style='color:blue; font-weight:bold;'>★最適解と同じ合計です！</span>`;
+                resultsHTML += `</div>`;
+            });
+            
+            let optimalText = bestCombo.map(q => `${q.event}(${q.year})`).join('<br>+ ');
+            resultsHTML += `<div style='background:#e3f2fd; padding:15px; border-radius:8px; margin-top:20px;'>`;
+            resultsHTML += `<strong>最適解の例:</strong><br>${optimalText}<br>= 合計 <strong>${optimalSum}</strong> (目標との差: ${minDiff})</div>`;
 
             document.getElementById("resContent").innerHTML = resultsHTML;
         }
 
         window.votePlayAgain = () => {
             update(ref(db, `rooms/${roomId}/players/${playerId}`), { playAgain: true });
-            document.getElementById("playAgainBtn").innerText = "待機中...";
+            document.getElementById("playAgainBtn").innerText = "他の人を待っています...";
             document.getElementById("playAgainBtn").disabled = true;
         };
 
     </script>
     <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; background: #fdfdfd; color: #333; }
-        button { margin: 10px; padding: 12px 24px; font-size: 18px; cursor: pointer; border-radius: 8px; border: 1px solid #ccc; background: white; }
-        button.selected { background: #ffeb3b; border-color: #fbc02d; font-weight: bold; }
-        input { padding: 8px; font-size: 16px; width: 100px; margin-bottom: 10px; }
-        .screen { display: none; padding: 20px; }
+        body { font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif; text-align: center; background: #fdfdfd; color: #333; margin: 0; padding: 10px; }
+        button { margin: 10px; padding: 12px 24px; font-size: 18px; cursor: pointer; border-radius: 8px; border: 1px solid #ccc; background: white; transition: 0.2s; }
+        button.selected { background: #fff176; border-color: #fbc02d; font-weight: bold; transform: scale(1.02); }
+        input { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
+        .screen { display: none; padding: 10px; max-width: 500px; margin: 0 auto; }
         #setup { display: block; }
-        #qList button { display: block; width: 90%; max-width: 400px; margin: 8px auto; text-align: left; }
+        #qList button { display: block; width: 100%; margin: 8px 0; text-align: left; padding: 15px; }
+        .ani-box { min-height: 400px; display: flex; flex-direction: column; justify-content: center; }
         h1 { color: #2c3e50; }
-        .ani-box { min-height: 300px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        ul { text-align: left; display: inline-block; }
     </style>
 </head>
 <body>
     <div id="setup" class="screen">
         <h1>歴史ピッタリゲーム</h1>
-        名前: <input type="text" id="uName" style="width:200px"><br>
+        名前: <input type="text" id="uName" style="width:80%"><br><br>
         問題数A: <input type="number" id="setA" value="5"><br>
-        目標値B: <input type="number" id="setB" value="5000"><br>
-        <button onclick="createRoom()" style="background:#4caf50; color:white;">ルームを作る</button>
+        目標値B: <input type="number" id="setB" value="5000"><br><br>
+        <button onclick="createRoom()" style="background:#4caf50; color:white; width:90%;">ルームを作る</button>
         <hr>
-        2桁ID: <input type="text" id="rId" maxlength="2"><br>
-        <button onclick="joinRoom()">参加する</button>
+        2桁ルームID: <input type="text" id="rId" maxlength="2" style="width:60px; text-transform:uppercase;"><br>
+        <button onclick="joinRoom()" style="width:90%;">参加する</button>
     </div>
 
     <div id="lobby" class="screen">
-        <h2>待機中... ID: <span id="displayRoomId"></span></h2>
-        <ul id="playerList" style="list-style:none; font-size:20px;"></ul>
-        <button id="startBtn" onclick="startGame()" style="background:#2196f3; color:white;">全員揃ったのでスタート！</button>
+        <h2>待機中... ID: <span id="displayRoomId" style="color:red; font-size:1.5em;"></span></h2>
+        <ul id="playerList" style="font-size:20px; min-height:100px;"></ul>
+        <button id="startBtn" onclick="startGame()" style="background:#2196f3; color:white; width:90%;">全員揃ったのでスタート！</button>
     </div>
 
     <div id="game" class="screen">
-        <h2><span id="targetB"></span>に近いものを選べ！</h2>
+        <h2 style="font-size:1.2em;">合計が <span id="targetB" style="color:red; font-size:1.5em;"></span> に<br>近くなるように選べ！</h2>
         <div id="qList"></div>
-        <p>（合計は隠されています）</p>
-        <button onclick="toggleReady()" style="background:#ff9800; color:white;">決定 / 解除</button>
+        <button id="readyBtn" onclick="toggleReady()" style="color:white; width:90%; font-weight:bold; height:60px; font-size:24px;">決定</button>
     </div>
 
     <div id="animation" class="screen">
@@ -283,8 +289,8 @@
 
     <div id="result" class="screen">
         <h2>最終結果</h2>
-        <div id="resContent"></div>
-        <button id="playAgainBtn" onclick="votePlayAgain()" style="background:#4caf50; color:white;">もう一度遊ぶ</button>
+        <div id="resContent" style="text-align:left;"></div>
+        <button id="playAgainBtn" onclick="votePlayAgain()" style="background:#4caf50; color:white; width:90%; margin-top:20px;">もう一度遊ぶ</button>
     </div>
 </body>
 </html>
