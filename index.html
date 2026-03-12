@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>歴史年号・合計ピッタリゲーム</title>
+    <title>歴史年号ピッタリゲーム</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBVdU-MrM30FfcQdonZwttDZoa1gHkgEUQ",
@@ -21,49 +21,47 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- データ（あなたが用意したものをここに追加できます） ---
         const allQuestions = [
             { event: "鎌倉幕府の成立", year: 1185, set: 1 },
             { event: "頼朝が征夷大将軍となった", year: 1192, set: 1 },
             { event: "関ヶ原の戦い", year: 1600, set: null },
             { event: "五・一五事件", year: 1932, set: 2 },
             { event: "二・二六事件", year: 1936, set: 2 },
-            { event: "Y2Kと表される年", year: 2000, set: null },
-            // 必要に応じてここに増やせます
+            { event: "Y2Kと表される年", year: 2000, set: null }
         ];
 
         let roomId = "";
         let playerId = Math.random().toString(36).substring(7);
         let myName = "";
+        let currentScreen = "setup";
 
-        // UI要素
-        const screens = ["setup", "lobby", "game", "result"];
         const showScreen = (id) => {
-            screens.forEach(s => document.getElementById(s).style.display = s === id ? 'block' : 'none');
+            currentScreen = id;
+            document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+            document.getElementById(id).style.display = 'block';
         };
 
-        // --- ルーム作成 ---
+        // 1. ルームIDを2桁にする
         window.createRoom = () => {
-            roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            roomId = Math.random().toString(36).substring(2, 4).toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
-            const A = parseInt(document.getElementById("setA").value) || 10;
+            const A = parseInt(document.getElementById("setA").value) || 5;
             const B = parseInt(document.getElementById("setB").value) || 5000;
             
             set(ref(db, 'rooms/' + roomId), {
                 settings: { A, B, status: "waiting", host: playerId },
-                players: { [playerId]: { name: myName, isReady: false, selected: [] } }
+                players: { [playerId]: { name: myName, isReady: false, selected: [], playAgain: false } }
             });
             listenRoom();
         };
 
-        // --- ルーム参加 ---
         window.joinRoom = () => {
             roomId = document.getElementById("rId").value.toUpperCase();
             myName = document.getElementById("uName").value || "名無し";
             if(!roomId) return alert("ルームIDを入力してね");
 
             update(ref(db, `rooms/${roomId}/players/${playerId}`), {
-                name: myName, isReady: false, selected: []
+                name: myName, isReady: false, selected: [], playAgain: false
             });
             listenRoom();
         };
@@ -84,13 +82,39 @@
                     renderGame(data);
                 }
                 else if (data.settings.status === "finished") {
-                    renderResult(data);
+                    if(currentScreen !== "result" && currentScreen !== "animation") {
+                        startDrama(data);
+                    }
+                }
+                
+                // 4. 全員が「もう一度遊ぶ」を押したかチェック
+                const players = Object.values(data.players);
+                if (players.every(p => p.playAgain) && data.settings.host === playerId) {
+                    resetGame(data.settings);
                 }
             });
         }
 
+        async function resetGame(settings) {
+            const selectedQs = selectQuestions(allQuestions, settings.A);
+            const updates = {
+                "settings/status": "playing",
+                "currentQuestions": selectedQs
+            };
+            // プレイヤーの状態をリセット
+            onValue(ref(db, `rooms/${roomId}/players`), (snap) => {
+                const pData = snap.val();
+                for(let id in pData) {
+                    updates[`players/${id}/isReady`] = false;
+                    updates[`players/${id}/selected`] = [];
+                    updates[`players/${id}/playAgain`] = false;
+                }
+            }, { onlyOnce: true });
+            update(ref(db, `rooms/${roomId}`), updates);
+        }
+
         window.startGame = () => {
-            onValue(ref(db, 'rooms/' + roomId + '/settings'), (snapshot) => {
+            onValue(ref(db, `rooms/${roomId}/settings`), (snapshot) => {
                 const settings = snapshot.val();
                 const selectedQs = selectQuestions(allQuestions, settings.A);
                 update(ref(db, `rooms/${roomId}/settings`), { status: "playing" });
@@ -113,6 +137,8 @@
 
         function renderGame(data) {
             showScreen("game");
+            // 2. 目標数値の表示修正
+            document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
             qDiv.innerHTML = "";
             const mySelected = data.players[playerId].selected || [];
@@ -121,20 +147,19 @@
                 const btn = document.createElement("button");
                 btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
-                btn.onclick = () => toggleSelect(idx, mySelected, data.currentQuestions);
+                btn.onclick = () => toggleSelect(idx, mySelected);
                 qDiv.appendChild(btn);
             });
 
-            document.getElementById("currentSum").innerText = mySelected.reduce((s, i) => s + data.currentQuestions[i].year, 0);
+            // 3. 「現在の合計」非表示（HTML側で削除済み）
             
-            // 全員準備完了チェック
             const players = Object.values(data.players);
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
         }
 
-        function toggleSelect(idx, current, qs) {
+        function toggleSelect(idx, current) {
             let newSelect = current.includes(idx) ? current.filter(i => i !== idx) : [...current, idx];
             update(ref(db, `rooms/${roomId}/players/${playerId}`), { selected: newSelect });
         }
@@ -145,22 +170,55 @@
             }, { onlyOnce: true });
         };
 
-        function renderResult(data) {
-            showScreen("result");
-            const B = data.settings.B;
-            let resultsHTML = "<ul>";
+        // 5. ドラマチックな結果発表演出
+        async function startDrama(data) {
+            showScreen("animation");
+            const ani = document.getElementById("animationContent");
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+            ani.innerHTML = "<h1>結果発表！！</h1>";
+            await delay(2000);
+
+            let qListHtml = "<h3>【正解発表】</h3><ul style='list-style:none; padding:0;'>";
+            data.currentQuestions.forEach(q => {
+                qListHtml += `<li>${q.event} : <strong>${q.year}年</strong></li>`;
+            });
+            qListHtml += "</ul>";
+            ani.innerHTML = qListHtml;
+            await delay(3000);
+
+            const mySum = (data.players[playerId].selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
+            ani.innerHTML += `<h2>あなたの合計: ${mySum}</h2>`;
+            await delay(2500);
+
+            ani.innerHTML += "<h1>優勝は...</h1>";
+            await delay(2000);
+
             let bestDiff = Infinity;
             let winner = "";
-
             Object.values(data.players).forEach(p => {
                 const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
-                const diff = Math.abs(B - sum);
-                resultsHTML += `<li>${p.name}: 合計 ${sum} (差: ${diff})</li>`;
+                const diff = Math.abs(data.settings.B - sum);
                 if (diff < bestDiff) { bestDiff = diff; winner = p.name; }
             });
-            resultsHTML += `</ul><h3>勝者: ${winner}!</h3>`;
+
+            ani.innerHTML += `<h1 style='color:red; font-size:3em;'>✨ ${winner} ✨</h1>`;
+            await delay(3000);
+
+            renderFinalResult(data);
+        }
+
+        function renderFinalResult(data) {
+            showScreen("result");
+            const B = data.settings.B;
+            let resultsHTML = "<h3>全員のスコア</h3><ul>";
+            Object.values(data.players).forEach(p => {
+                const sum = (p.selected || []).reduce((s, i) => s + data.currentQuestions[i].year, 0);
+                resultsHTML += `<li>${p.name}: 合計 ${sum} (差: ${Math.abs(B - sum)})</li>`;
+            });
+            resultsHTML += "</ul>";
             
-            // 最適解（簡易全探索）
+            // 最適解
             const qs = data.currentQuestions;
             let bestCombo = [], minDiff = Infinity;
             for(let i=0; i < (1 << qs.length); i++) {
@@ -170,55 +228,63 @@
                 }
                 if(Math.abs(B - tempSum) < minDiff) { minDiff = Math.abs(B - tempSum); bestCombo = tempCombo; }
             }
+            resultsHTML += `<div style='background:#eee; padding:10px;'><strong>最適解の例:</strong><br>${bestCombo.map(q => q.event).join("<br>+ ")}<br>= 合計 ${B - minDiff + minDiff === B ? B : B-minDiff}</div>`;
 
-            document.getElementById("resContent").innerHTML = resultsHTML + 
-                `<p>最適解の例: ${bestCombo.map(q => q.event).join(" + ")} (合計: ${B - minDiff + minDiff === B ? B : '最接近'})</p>`;
+            document.getElementById("resContent").innerHTML = resultsHTML;
         }
 
-        window.goNext = () => {
-             if (playerId === "host_id_logic_needed") { /* 簡略化のためリロード推奨 */ }
-             location.reload();
+        window.votePlayAgain = () => {
+            update(ref(db, `rooms/${roomId}/players/${playerId}`), { playAgain: true });
+            document.getElementById("playAgainBtn").innerText = "待機中...";
+            document.getElementById("playAgainBtn").disabled = true;
         };
 
     </script>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f4f8; }
-        button { margin: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        .selected { background: #ffcc00; border: 2px solid #ff9900; }
-        #qList button { display: block; width: 80%; margin: 5px auto; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; background: #fdfdfd; color: #333; }
+        button { margin: 10px; padding: 12px 24px; font-size: 18px; cursor: pointer; border-radius: 8px; border: 1px solid #ccc; background: white; }
+        button.selected { background: #ffeb3b; border-color: #fbc02d; font-weight: bold; }
+        input { padding: 8px; font-size: 16px; width: 100px; margin-bottom: 10px; }
         .screen { display: none; padding: 20px; }
         #setup { display: block; }
+        #qList button { display: block; width: 90%; max-width: 400px; margin: 8px auto; text-align: left; }
+        h1 { color: #2c3e50; }
+        .ani-box { min-height: 300px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
     <div id="setup" class="screen">
         <h1>歴史ピッタリゲーム</h1>
-        名前: <input type="text" id="uName" placeholder="なまえ"><br>
+        名前: <input type="text" id="uName" style="width:200px"><br>
         問題数A: <input type="number" id="setA" value="5"><br>
         目標値B: <input type="number" id="setB" value="5000"><br>
-        <button onclick="createRoom()">ルームを作る</button>
+        <button onclick="createRoom()" style="background:#4caf50; color:white;">ルームを作る</button>
         <hr>
-        ルームID: <input type="text" id="rId"><br>
+        2桁ID: <input type="text" id="rId" maxlength="2"><br>
         <button onclick="joinRoom()">参加する</button>
     </div>
 
     <div id="lobby" class="screen">
         <h2>待機中... ID: <span id="displayRoomId"></span></h2>
-        <ul id="playerList"></ul>
-        <button id="startBtn" onclick="startGame()">スタート！</button>
+        <ul id="playerList" style="list-style:none; font-size:20px;"></ul>
+        <button id="startBtn" onclick="startGame()" style="background:#2196f3; color:white;">全員揃ったのでスタート！</button>
     </div>
 
     <div id="game" class="screen">
-        <h2>目標: <span id="targetB"></span>に近いものを選べ！</h2>
+        <h2><span id="targetB"></span>に近いものを選べ！</h2>
         <div id="qList"></div>
-        <p>現在の合計: <span id="currentSum">0</span></p>
-        <button onclick="toggleReady()">決定 / 解除</button>
+        <p>（合計は隠されています）</p>
+        <button onclick="toggleReady()" style="background:#ff9800; color:white;">決定 / 解除</button>
+    </div>
+
+    <div id="animation" class="screen">
+        <div id="animationContent" class="ani-box"></div>
     </div>
 
     <div id="result" class="screen">
-        <h2>結果発表</h2>
+        <h2>最終結果</h2>
         <div id="resContent"></div>
-        <button onclick="goNext()">もう一度遊ぶ</button>
+        <button id="playAgainBtn" onclick="votePlayAgain()" style="background:#4caf50; color:white;">もう一度遊ぶ</button>
     </div>
 </body>
 </html>
