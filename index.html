@@ -197,7 +197,7 @@
             return filtered;
         }
 
-        function renderGame(data) {
+function renderGame(data) {
             showScreen("game");
             document.getElementById("targetB").innerText = data.settings.B;
             const qDiv = document.getElementById("qList");
@@ -207,8 +207,20 @@
             
             data.currentQuestions.forEach((q, idx) => {
                 const btn = document.createElement("button");
-                btn.innerText = q.event;
                 btn.className = mySelected.includes(idx) ? "selected" : "";
+                
+                // --- ここがチラつき防止のポイント ---
+                // 生のテキストを表示させず、KaTeXで変換した「見た目」を直接ボタンの中に入れる
+                try {
+                    // $ $ で囲まれた部分を数式としてレンダリングしたHTMLを取得
+                    btn.innerHTML = q.event.replace(/\$(.*?)\$/g, (match, tex) => {
+                        return katex.renderToString(tex, { throwOnError: false });
+                    });
+                } catch (e) {
+                    btn.innerText = q.event; // 万が一失敗した時の保険
+                }
+                // ----------------------------------
+
                 btn.onclick = () => { 
                     if(!myData.isReady) {
                         sounds.tap();
@@ -231,6 +243,7 @@
             if (players.every(p => p.isReady) && data.settings.host === playerId) {
                 update(ref(db, `rooms/${roomId}/settings`), { status: "finished" });
             }
+            // 最後に一応全体スキャンも残しておきます（保険）
             setTimeout(typeset, 0);
         }
 
